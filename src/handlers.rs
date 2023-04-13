@@ -4,9 +4,11 @@ use super::Pool;
 use crate::diesel::QueryDsl;
 use crate::diesel::RunQueryDsl;
 use actix_web::{web, Error, HttpResponse};
+use diesel::update;
 use diesel::dsl::{delete, insert_into};
 use serde::{Deserialize, Serialize};
 use std::vec::Vec;
+use crate::diesel::ExpressionMethods;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct InputUser {
@@ -64,6 +66,36 @@ pub async fn add_user(
 ) -> Result<HttpResponse, Error> {
   Ok(
     web::block(move || add_single_user(db, item))
+      .await
+      .map(|user| HttpResponse::Ok().json(user))
+      .map_err(|_| HttpResponse::InternalServerError())?,
+  )
+}
+
+// Helper functions
+fn update_single_user(
+  db: web::Data<Pool>, 
+  user_id: i32,
+  item: web::Json<InputUser>
+) -> Result<usize, diesel::result::Error> {
+  let conn = db.get().unwrap();
+  let count = update(users.find(user_id))
+    .set((
+      first_name.eq(item.first_name.clone()),
+      last_name.eq(item.last_name.clone()),
+      email.eq(item.email.clone()),
+    ))
+    .execute(&conn)?;
+  Ok(count) 
+}
+
+pub async fn update_user(
+  db: web::Data<Pool>,
+  user_id: web::Path<i32>,
+  item: web::Json<InputUser>
+) -> Result<HttpResponse, Error> {
+  Ok(
+    web::block(move || update_single_user(db, user_id.into_inner(), item))
       .await
       .map(|user| HttpResponse::Ok().json(user))
       .map_err(|_| HttpResponse::InternalServerError())?,
